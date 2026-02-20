@@ -1,7 +1,7 @@
 name: kitten_tts_flutter
-description: "A simple wrapper for Kitten TTS."
+description: "A local, offline Text-to-Speech (TTS) engine for Flutter, powered by the Kitten TTS ONNX model."
 version: 0.0.1
-homepage:
+repository: https://github.com/SpaceXM/Kitten-TTS-FLutter
 
 environment:
   sdk: ^3.10.4
