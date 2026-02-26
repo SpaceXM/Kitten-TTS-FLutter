@@ -1,0 +1,1 @@
+enum TtsModelType { kitten, kokoro }

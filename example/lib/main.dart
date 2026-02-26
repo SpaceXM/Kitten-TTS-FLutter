@@ -2,8 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:http/http.dart' as http;
-import 'package:kitten_tts_flutter/kitten_tts_flutter.dart';
+import 'package:kitten_tts_flutter/flutter_tts.dart';
 
 void main() {
   runApp(const MyApp());
@@ -15,7 +14,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Kitten TTS Example',
+      title: 'Flutter TTS Example',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
@@ -32,7 +31,7 @@ class TtsHomePage extends StatefulWidget {
 }
 
 class _TtsHomePageState extends State<TtsHomePage> {
-  final KittenTtsFlutter _tts = KittenTtsFlutter();
+  FlutterTts _tts = FlutterTts.kitten();
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   bool _isInitializing = false;
@@ -40,73 +39,47 @@ class _TtsHomePageState extends State<TtsHomePage> {
   String? _statusMessage;
   double _downloadProgress = 0.0;
 
-  // This text comes already phonemized roughly like in espeak: "hˈəloʊ, wˈɜːld"
+  TtsModelType _selectedModel = TtsModelType.kitten;
+
   final TextEditingController _textController = TextEditingController(
     text: "ðɪs hˈaɪ kwˈɒlɪti tiː-tiː-ˈɛs mˈɒdəl wˈɜːks wɪðˈaʊt ɐ dʒiː-piː-jˈuː",
   );
 
   String _selectedVoice = "Bella";
-  final List<String> _voices = [
-    "Bella",
-    "Jasper",
-    "Luna",
-    "Bruno",
-    "Rosie",
-    "Hugo",
-    "Kiki",
-    "Leo",
+  final List<String> _kittenVoices = [
+    "Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo",
+  ];
+  final List<String> _kokoroVoices = [
+    "af_bella", "af_nicole", "af_sarah", "af_sky", "am_adam", "am_michael",
+    "bf_emma", "bf_isabella", "bm_george", "bm_lewis"
   ];
 
   @override
   void initState() {
     super.initState();
-    _initTts();
+    _checkInitModels();
   }
 
-  Future<void> _initTts() async {
+  Future<void> _checkInitModels() async {
     setState(() {
       _isInitializing = true;
-      _statusMessage =
-          "Downloading model files...\nThis may take a minute on first run.";
+      _statusMessage = "Checking models...";
     });
 
     try {
-      final docDir = await getApplicationDocumentsDirectory();
+      bool hasModels = await _tts.checkModels();
+      if (!hasModels) {
+        setState(() {
+          _statusMessage = "Models missing. Downloading...";
+        });
+        await _tts.downloadModels(onProgress: (p) {
+          setState(() => _downloadProgress = p);
+        });
+        setState(() => _downloadProgress = 0.0);
+      }
 
-      final configPath = '${docDir.path}/config.json';
-      final modelPath = '${docDir.path}/kitten_tts_nano_v0_8.onnx';
-      final voicesPath = '${docDir.path}/voices.npz';
-
-      await _downloadFile(
-        "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/config.json?download=true",
-        configPath,
-      );
-
-      setState(() {
-        _statusMessage = "Downloading ONNX parameters...";
-      });
-      await _downloadFile(
-        "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/kitten_tts_nano_v0_8.onnx?download=true",
-        modelPath,
-      );
-
-      setState(() {
-        _statusMessage = "Downloading style vectors...";
-      });
-      await _downloadFile(
-        "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/voices.npz?download=true",
-        voicesPath,
-      );
-
-      setState(() {
-        _statusMessage = "Initializing ONNX session...";
-      });
-
-      await _tts.init(
-        configPath: configPath,
-        modelPath: modelPath,
-        voicesPath: voicesPath,
-      );
+      setState(() => _statusMessage = "Initializing session...");
+      await _tts.init();
 
       setState(() {
         _statusMessage = "Ready!";
@@ -120,34 +93,22 @@ class _TtsHomePageState extends State<TtsHomePage> {
     }
   }
 
-  Future<void> _downloadFile(String url, String destPath) async {
-    final file = File(destPath);
-    if (!file.existsSync()) {
-      final request = http.Request('GET', Uri.parse(url));
-      final response = await request.send();
-
-      if (response.statusCode != 200) {
-        throw Exception("Failed to download $url");
+  void _onModelChanged(TtsModelType? modelType) {
+    if (modelType == null || _selectedModel == modelType) return;
+    
+    setState(() {
+      _selectedModel = modelType;
+      _tts.release();
+      if (modelType == TtsModelType.kokoro) {
+        _tts = FlutterTts.kokoro();
+        _selectedVoice = _kokoroVoices.first;
+      } else {
+        _tts = FlutterTts.kitten();
+        _selectedVoice = _kittenVoices.first;
       }
+    });
 
-      final contentLength = response.contentLength ?? 0;
-      int downloaded = 0;
-
-      final sink = file.openWrite();
-      await response.stream.forEach((chunk) {
-        sink.add(chunk);
-        downloaded += chunk.length;
-        if (contentLength > 0) {
-          setState(() {
-            _downloadProgress = downloaded / contentLength;
-          });
-        }
-      });
-      await sink.close();
-      setState(() {
-        _downloadProgress = 0.0;
-      });
-    }
+    _checkInitModels();
   }
 
   Future<void> _generateAndPlay() async {
@@ -159,14 +120,12 @@ class _TtsHomePageState extends State<TtsHomePage> {
     });
 
     try {
-      // Generate WAV bytes representing the spoken phrase
       final wavBytes = await _tts.generateWavBytes(
         phonemizedText: _textController.text,
         language: "en",
         voice: _selectedVoice,
       );
 
-      // Save to a temporary file so audio players can read it
       final tempDir = await getTemporaryDirectory();
       final wavFile = File('${tempDir.path}/output.wav');
       await wavFile.writeAsBytes(wavBytes);
@@ -175,7 +134,6 @@ class _TtsHomePageState extends State<TtsHomePage> {
         _statusMessage = "Playing audio...";
       });
 
-      // Play the audio
       await _audioPlayer.play(DeviceFileSource(wavFile.path));
 
       setState(() {
@@ -201,12 +159,25 @@ class _TtsHomePageState extends State<TtsHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final voices = _selectedModel == TtsModelType.kokoro ? _kokoroVoices : _kittenVoices;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Kitten TTS')),
-      body: Padding(
+      appBar: AppBar(title: const Text('Flutter TTS Engine')),
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
+            SegmentedButton<TtsModelType>(
+              segments: const [
+                ButtonSegment(value: TtsModelType.kitten, label: Text("Kitten")),
+                ButtonSegment(value: TtsModelType.kokoro, label: Text("Kokoro")),
+              ],
+              selected: {_selectedModel},
+              onSelectionChanged: (Set<TtsModelType> sel) {
+                _onModelChanged(sel.first);
+              },
+            ),
+            const SizedBox(height: 16),
             Text(
               _statusMessage ?? "",
               style: TextStyle(
@@ -230,16 +201,10 @@ class _TtsHomePageState extends State<TtsHomePage> {
               maxLines: 3,
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _selectedVoice,
-              onSaved: (val) {
-                if (val != null) _selectedVoice = val;
-              },
-              decoration: const InputDecoration(
-                labelText: "Voice",
-                border: OutlineInputBorder(),
-              ),
-              items: _voices.map((String v) {
+            DropdownButton<String>(
+              isExpanded: true,
+              value: voices.contains(_selectedVoice) ? _selectedVoice : voices.first,
+              items: voices.map((String v) {
                 return DropdownMenuItem(value: v, child: Text(v));
               }).toList(),
               onChanged: (val) {
