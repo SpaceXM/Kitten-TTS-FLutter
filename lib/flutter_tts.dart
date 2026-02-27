@@ -158,7 +158,7 @@ class FlutterTts {
 
     final downloadUrl =
         url ??
-        "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/voices/$voiceName.bin?download=true";
+        "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/$voiceName.bin?download=true";
 
     await _downloadFile(url: downloadUrl, destPath: destPath);
   }
