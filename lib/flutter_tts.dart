@@ -62,7 +62,8 @@ class FlutterTts {
       if (!File('$basePath/model_q8f16.onnx').existsSync()) return false;
     } else {
       if (!File('$basePath/config.json').existsSync()) return false;
-      if (!File('$basePath/kitten_tts_nano_v0_8.onnx').existsSync()) return false;
+      if (!File('$basePath/kitten_tts_nano_v0_8.onnx').existsSync())
+        return false;
       if (!File('$basePath/voices.npz').existsSync()) return false;
     }
 
@@ -82,23 +83,27 @@ class FlutterTts {
 
     if (modelType == TtsModelType.kokoro) {
       await _downloadFile(
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_q8f16.onnx?download=true",
+        url:
+            "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_q8f16.onnx?download=true",
         destPath: "$basePath/model_q8f16.onnx",
         onProgress: onProgress,
       );
     } else {
       await _downloadFile(
-        url: "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/config.json?download=true",
+        url:
+            "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/config.json?download=true",
         destPath: "$basePath/config.json",
         onProgress: onProgress,
       );
       await _downloadFile(
-        url: "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/kitten_tts_nano_v0_8.onnx?download=true",
+        url:
+            "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/kitten_tts_nano_v0_8.onnx?download=true",
         destPath: "$basePath/kitten_tts_nano_v0_8.onnx",
         onProgress: onProgress,
       );
       await _downloadFile(
-        url: "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/voices.npz?download=true",
+        url:
+            "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/voices.npz?download=true",
         destPath: "$basePath/voices.npz",
         onProgress: onProgress,
       );
@@ -135,20 +140,44 @@ class FlutterTts {
     await sink.close();
   }
 
+  /// Downloads a specific Kokoro voice file on-demand.
+  /// If [url] is provided, it downloads from that direct URL.
+  /// Otherwise, it defaults to the HuggingFace URL for the specified [voiceName].
+  Future<void> downloadKokoroVoice(String voiceName, {String? url}) async {
+    if (modelType != TtsModelType.kokoro) {
+      throw Exception(
+        "downloadKokoroVoice can only be used with the Kokoro model.",
+      );
+    }
+    final dir = await getDefaultModelsDirectory();
+    final voicesDir = '$dir/kokoro/voices';
+    await Directory(voicesDir).create(recursive: true);
 
+    final destPath = '$voicesDir/$voiceName.bin';
+    if (File(destPath).existsSync()) return;
+
+    final downloadUrl =
+        url ??
+        "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/voices/$voiceName.bin?download=true";
+
+    await _downloadFile(url: downloadUrl, destPath: destPath);
+  }
 
   /// Initializes the TTS model. If paths are omitted, defaults from [downloadModels] are used.
   Future<void> init({
     String? configPath,
     String? modelPath,
-    String? voicesPath, // For Kokoro, this is ignored since it's an asset. For Kitten, the voices.npz file.
+    String?
+    voicesPath, // For Kokoro, this is ignored since it's an asset. For Kitten, the voices.npz file.
   }) async {
     final dir = await getDefaultModelsDirectory();
     final modelFolder = modelType == TtsModelType.kokoro ? 'kokoro' : 'kitten';
     final basePath = '$dir/$modelFolder';
 
     if (modelType == TtsModelType.kokoro) {
-      final configString = await rootBundle.loadString('packages/flutter_tts_engine/assets/Kokoro/config.json');
+      final configString = await rootBundle.loadString(
+        'packages/flutter_tts_engine/assets/Kokoro/config.json',
+      );
       _config = json.decode(configString);
     } else {
       final actualConfigPath = configPath ?? '$basePath/config.json';
@@ -159,16 +188,17 @@ class FlutterTts {
       _config = json.decode(configFile.readAsStringSync());
     }
 
-    final actualModelPath = modelPath ?? 
-        (modelType == TtsModelType.kokoro 
-            ? '$basePath/model_q8f16.onnx' 
+    final actualModelPath =
+        modelPath ??
+        (modelType == TtsModelType.kokoro
+            ? '$basePath/model_q8f16.onnx'
             : '$basePath/kitten_tts_nano_v0_8.onnx');
     await _engine.init(actualModelPath);
 
     if (modelType != TtsModelType.kokoro) {
       _voicesDataPath = voicesPath ?? '$basePath/voices.npz';
     }
-            
+
     _loadedVoices = {};
     _initialized = true;
   }
@@ -188,24 +218,52 @@ class FlutterTts {
     }
 
     // Prepare text tokens
-    final normalizedPhonemes = phonemizedText.trim().replaceAll(RegExp(r'\s+'), ' ');
+    final normalizedPhonemes = phonemizedText.trim().replaceAll(
+      RegExp(r'\s+'),
+      ' ',
+    );
     final tokens = _textCleaner.clean(normalizedPhonemes);
-    
+
     // Resolve voice
     String actualVoiceName = voice;
     if (modelType == TtsModelType.kitten) {
       final aliases = _config['voice_aliases'] as Map<String, dynamic>?;
-      actualVoiceName = (aliases != null && aliases.containsKey(voice)) ? aliases[voice] : voice;
+      actualVoiceName = (aliases != null && aliases.containsKey(voice))
+          ? aliases[voice]
+          : voice;
     }
 
     Float32List voiceStyle;
-    
+
     if (modelType == TtsModelType.kokoro) {
-      // For Kokoro, voices are bundled in assets and sliced dynamically based on token length.
-      voiceStyle = await BinParser.extractVoiceStyle('packages/flutter_tts_engine/assets/Kokoro/voices/$actualVoiceName.bin', tokens.length);
+      final docDir = await getDefaultModelsDirectory();
+      final localVoicePath = '$docDir/kokoro/voices/$actualVoiceName.bin';
+
+      if (File(localVoicePath).existsSync()) {
+        // Load dynamically downloaded voice
+        voiceStyle = await BinParser.extractVoiceStyle(
+          localVoicePath,
+          tokens.length,
+        );
+      } else {
+        // Load bundled default voice
+        try {
+          voiceStyle = await BinParser.extractVoiceStyle(
+            'packages/flutter_tts_engine/assets/Kokoro/voices/$actualVoiceName.bin',
+            tokens.length,
+          );
+        } catch (_) {
+          throw Exception(
+            "Voice '$actualVoiceName' isn't bundled. Call downloadKokoroVoice('$actualVoiceName') first.",
+          );
+        }
+      }
     } else {
       if (!_loadedVoices.containsKey(actualVoiceName)) {
-        _loadedVoices[actualVoiceName] = NpzParser.extractVoiceStyle(_voicesDataPath, actualVoiceName);
+        _loadedVoices[actualVoiceName] = NpzParser.extractVoiceStyle(
+          _voicesDataPath,
+          actualVoiceName,
+        );
       }
       voiceStyle = _loadedVoices[actualVoiceName]!;
     }
@@ -229,7 +287,9 @@ class FlutterTts {
     double? speed,
     int sampleRate = 24000,
   }) async {
-    String defaultVoice = modelType == TtsModelType.kokoro ? "af_bella" : "Bella";
+    String defaultVoice = modelType == TtsModelType.kokoro
+        ? "af_bella"
+        : "Bella";
     final floatData = await generateAudio(
       phonemizedText: phonemizedText,
       language: language,

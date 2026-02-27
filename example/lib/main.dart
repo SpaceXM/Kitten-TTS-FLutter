@@ -202,9 +202,25 @@ class _TtsHomePageState extends State<TtsHomePage> {
         _statusMessage = "Ready";
       });
     } catch (e) {
-      setState(() {
-        _statusMessage = "Generation failed: $e";
-      });
+      if (e.toString().contains("isn't bundled")) {
+        setState(() {
+          _statusMessage = "Downloading voice $_selectedVoice...";
+        });
+        try {
+          await _tts.downloadKokoroVoice(_selectedVoice);
+          // Try generating again after successful download
+          _generateAndPlay();
+          return; // Exit current flow
+        } catch (downloadErr) {
+          setState(() {
+            _statusMessage = "Failed to download voice: $downloadErr";
+          });
+        }
+      } else {
+        setState(() {
+          _statusMessage = "Generation failed: $e";
+        });
+      }
     } finally {
       setState(() {
         _isGenerating = false;
