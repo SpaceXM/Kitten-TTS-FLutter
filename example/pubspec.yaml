@@ -37,7 +37,7 @@ dependencies:
   path_provider: ^2.1.5
   audioplayers: ^6.5.1
   http: ^1.2.0
-  kitten_tts_flutter:
+  flutter_tts_engine:
     path: ..
 
 dev_dependencies:

@@ -11,60 +11,68 @@ and the Flutter guide for
 [developing packages and plugins](https://flutter.dev/to/develop-packages).
 -->
 
-# Kitten TTS Flutter 😻
+# Flutter TTS Engine 🗣️
 
-A lightweight, purely local Text-to-Speech (TTS) Flutter package that runs the high-quality **Kitten TTS** ONNX model directly on your users' devices. No cloud APIs, no strict hardware requirements, just fast CPU-optimized inference.
+A lightweight, purely local Text-to-Speech (TTS) Flutter package that runs high-quality TTS ONNX models directly on your users' devices. No cloud APIs, no strict hardware requirements, just fast CPU-optimized inference.
+
+Currently supports two State-of-the-Art local models:
+- **Kitten TTS** 😻
+- **Kokoro-82M** 🫀
 
 ## Features ✨
 
-- **100% Offline & Local**: Inference runs locally using `onnxruntime` on Android and iOS.
-- **Ultra-lightweight**: The ONNX model is under 20MB.
-- **Multi-Voice Support**: Built-in support for multiple voices via `.npz` style embeddings (e.g., Bella, Jasper, Luna, etc.).
-- **Automatic Tokenization**: Includes a pure-Dart port of the original TextCleaner. No Python dependencies.
+- **100% Offline & Local**: Inference runs locally using `onnxruntime` on Android, iOS, macOS, Windows, and Linux.
+- **Multiple Models**: Instantly switch between the highly-efficient Kitten model and the ultra-realistic Kokoro-82M model.
+- **Multi-Voice Support**: Built-in support for dynamically extracting voice embeddings (`.npz` for Kitten, `.bin` for Kokoro).
+- **Auto-Downloading**: Built-in methods to easily fetch models and voices directly from HuggingFace to the user's local document directory.
+- **Automatic Tokenization**: Includes a pure-Dart port of the original TextCleaners for both models.
 - **WAV generation**: Generates raw PCM floats or decodes directly into playable `.wav` bytes in memory.
 
 ## Prerequisites
 
-You'll need the following three files from the [KittenTTS HuggingFace Repository](https://huggingface.co/KittenML). 
-Since they are large, you should download them dynamically in your production app or place them in your `assets` directory for testing:
-
-1. `config.json`
-2. `kitten_tts_nano_v0_8.onnx`
-3. `voices.npz`
-
-*Note: The input text passed to this module **must already be phonemized** (e.g., using eSpeak), just like the original Python model expects.*
+The TTS models require your input text to be **pre-phonemized** (e.g., using an external server running eSpeak-ng). Just like the original Python projects, this package expects IPA phonetic characters (e.g., `"hˈəloʊ, wˈɜːld"`), not raw English text.
 
 ## Usage 🚀
 
-### 1. Initialization
+### 1. Initialization & Downloading Models
 
-First, initialize the engine by providing the **absolute paths** to the three model files on the user's filesystem.
+You don't need to manually bundle the potentially large ONNX generic files inside your application assets. Instead, use the built-in `checkModels()` and `downloadModels()` methods to fetch them from HuggingFace at runtime.
 
 ```dart
-import 'package:kitten_tts_flutter/kitten_tts_flutter.dart';
+import 'package:flutter_tts_engine/flutter_tts.dart';
 
-final tts = KittenTtsFlutter();
+// Create an instance for either model:
+final tts = FlutterTts.kokoro(); // Or FlutterTts.kitten()
 
-await tts.init(
-  configPath: '/path/to/config.json',
-  modelPath: '/path/to/kitten_tts_nano_v0_8.onnx',
-  voicesPath: '/path/to/voices.npz',
-);
+// Check if models exist in the app's document directory
+bool hasModels = await tts.checkModels();
+
+if (!hasModels) {
+  // Downloads config.json and model.onnx dynamically
+  await tts.downloadModels(onProgress: (progress) {
+    print("Download Progress: ${(progress * 100).toStringAsFixed(1)}%");
+  });
+}
+
+// Initialize the ONNX session
+await tts.init();
 ```
+
+*Note: For Kokoro, voice pack `.bin` files are actually downloaded automatically on-demand the first time you request a specific voice.*
 
 ### 2. Audio Generation
 
-Provide the eSpeak-phonemized text, the language, and the target voice. The package returns a `Uint8List` representing a complete `.wav` file that can be saved to disk or played immediately.
+Provide the eSpeak-phonemized text, the language, and the target voice. The package returns a `Uint8List` representing a complete `.wav` file that you can play directly or save to disk.
 
 ```dart
-// The text must be phonemized beforehand!
+// The text must be phonemized beforehand via eSpeak!
 final phonemizedText = "ðɪs hˈaɪ kwˈɒlɪti tiː-tiː-ˈɛs mˈɒdəl wˈɜːks wɪðˈaʊt ɐ dʒiː-piː-jˈuː";
 
 // Generate WAV bytes
-final wavBytes = tts.generateWavBytes(
+final wavBytes = await tts.generateWavBytes(
   phonemizedText: phonemizedText,
-  language: "en",
-  voice: "Bella", // Or "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo"
+  language: "en", 
+  voice: "af_bella", // Kokoro: "af_bella", "af_sarah", "am_adam", etc. (Kitten: "Bella", "Jasper")
 );
 
 // You can now play these bytes with packages like `audioplayers`
@@ -74,13 +82,14 @@ final wavBytes = tts.generateWavBytes(
 
 ### 3. Cleanup
 
-When you are done or when your app closes, release the ONNX session to free up memory:
+When you are done or when your app closes, release the ONNX session to free up device memory:
 
 ```dart
 tts.release();
 ```
 
 ## How it works under the hood
-- **`onnxruntime`** runs the neural network using C++ bindings. Int8, FP16, and FP32 models are automatically supported as long as the I/O shapes remain identical.
-- **`npy_parser.dart`** reads directly into the `voices.npz` archive to extract the exact 256-dimensional float embedding for your chosen voice, without needing heavy data-science packages. 
-- **`text_cleaner.dart`** maps the phonemes using the same deterministic dictionary as the original `KittenTTS`.
+- **`onnxruntime`** runs the neural network via `flutter_onnxruntime` FFI bindings.
+- **`bin_parser.dart`** dynamically slices the exact Kokoro voice embedding natively based on the token sequence length.
+- **`npy_parser.dart`** reads directly into Kitten's `voices.npz` zip archive to extract the 256-dimensional float embedding without needing heavy data-science packages. 
+- **`text_cleaner.dart`** maps the phonemes using the same deterministic dictionaries as the original models.
