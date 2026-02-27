@@ -47,11 +47,71 @@ class _TtsHomePageState extends State<TtsHomePage> {
 
   String _selectedVoice = "Bella";
   final List<String> _kittenVoices = [
-    "Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo",
+    "Bella",
+    "Jasper",
+    "Luna",
+    "Bruno",
+    "Rosie",
+    "Hugo",
+    "Kiki",
+    "Leo",
   ];
   final List<String> _kokoroVoices = [
-    "af_bella", "af_nicole", "af_sarah", "af_sky", "am_adam", "am_michael",
-    "bf_emma", "bf_isabella", "bm_george", "bm_lewis"
+    "af",
+    "af_alloy",
+    "af_aoede",
+    "af_bella",
+    "af_heart",
+    "af_jessica",
+    "af_kore",
+    "af_nicole",
+    "af_nova",
+    "af_river",
+    "af_sarah",
+    "af_sky",
+    "am_adam",
+    "am_echo",
+    "am_eric",
+    "am_fenrir",
+    "am_liam",
+    "am_michael",
+    "am_onyx",
+    "am_puck",
+    "am_santa",
+    "bf_alice",
+    "bf_emma",
+    "bf_isabella",
+    "bf_lily",
+    "bm_daniel",
+    "bm_fable",
+    "bm_george",
+    "bm_lewis",
+    "ef_dora",
+    "em_alex",
+    "em_santa",
+    "ff_siwis",
+    "hf_alpha",
+    "hf_beta",
+    "hm_omega",
+    "hm_psi",
+    "if_sara",
+    "im_nicola",
+    "jf_alpha",
+    "jf_gongitsune",
+    "jf_nezumi",
+    "jf_tebukuro",
+    "jm_kumo",
+    "pf_dora",
+    "pm_alex",
+    "pm_santa",
+    "zf_xiaobei",
+    "zf_xiaoni",
+    "zf_xiaoxiao",
+    "zf_xiaoyi",
+    "zm_yunjian",
+    "zm_yunxi",
+    "zm_yunxia",
+    "zm_yunyang",
   ];
 
   @override
@@ -72,9 +132,11 @@ class _TtsHomePageState extends State<TtsHomePage> {
         setState(() {
           _statusMessage = "Models missing. Downloading...";
         });
-        await _tts.downloadModels(onProgress: (p) {
-          setState(() => _downloadProgress = p);
-        });
+        await _tts.downloadModels(
+          onProgress: (p) {
+            setState(() => _downloadProgress = p);
+          },
+        );
         setState(() => _downloadProgress = 0.0);
       }
 
@@ -95,7 +157,7 @@ class _TtsHomePageState extends State<TtsHomePage> {
 
   void _onModelChanged(TtsModelType? modelType) {
     if (modelType == null || _selectedModel == modelType) return;
-    
+
     setState(() {
       _selectedModel = modelType;
       _tts.release();
@@ -159,7 +221,9 @@ class _TtsHomePageState extends State<TtsHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final voices = _selectedModel == TtsModelType.kokoro ? _kokoroVoices : _kittenVoices;
+    final voices = _selectedModel == TtsModelType.kokoro
+        ? _kokoroVoices
+        : _kittenVoices;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Flutter TTS Engine')),
@@ -169,8 +233,14 @@ class _TtsHomePageState extends State<TtsHomePage> {
           children: [
             SegmentedButton<TtsModelType>(
               segments: const [
-                ButtonSegment(value: TtsModelType.kitten, label: Text("Kitten")),
-                ButtonSegment(value: TtsModelType.kokoro, label: Text("Kokoro")),
+                ButtonSegment(
+                  value: TtsModelType.kitten,
+                  label: Text("Kitten"),
+                ),
+                ButtonSegment(
+                  value: TtsModelType.kokoro,
+                  label: Text("Kokoro"),
+                ),
               ],
               selected: {_selectedModel},
               onSelectionChanged: (Set<TtsModelType> sel) {
@@ -203,7 +273,9 @@ class _TtsHomePageState extends State<TtsHomePage> {
             const SizedBox(height: 16),
             DropdownButton<String>(
               isExpanded: true,
-              value: voices.contains(_selectedVoice) ? _selectedVoice : voices.first,
+              value: voices.contains(_selectedVoice)
+                  ? _selectedVoice
+                  : voices.first,
               items: voices.map((String v) {
                 return DropdownMenuItem(value: v, child: Text(v));
               }).toList(),
