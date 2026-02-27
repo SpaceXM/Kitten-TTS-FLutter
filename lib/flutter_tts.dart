@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
@@ -51,19 +52,16 @@ class FlutterTts {
 
   /// Checks if the necessary models are downloaded.
   /// For Kitten: config.json, model.onnx, voices.npz
-  /// For Kokoro: config.json, model.onnx, voices (directory of .bin files)
+  /// For Kokoro: model_q8f16.onnx (config and voices are bundled)
   Future<bool> checkModels({String? modelsDir}) async {
     final dir = modelsDir ?? await getDefaultModelsDirectory();
     final modelFolder = modelType == TtsModelType.kokoro ? 'kokoro' : 'kitten';
     final basePath = '$dir/$modelFolder';
 
-    if (!File('$basePath/config.json').existsSync()) return false;
-    
     if (modelType == TtsModelType.kokoro) {
       if (!File('$basePath/model_q8f16.onnx').existsSync()) return false;
-      // We assume voices are downloaded on demand or we check if the directory exists
-      if (!Directory('$basePath/voices').existsSync()) return false;
     } else {
+      if (!File('$basePath/config.json').existsSync()) return false;
       if (!File('$basePath/kitten_tts_nano_v0_8.onnx').existsSync()) return false;
       if (!File('$basePath/voices.npz').existsSync()) return false;
     }
@@ -84,16 +82,10 @@ class FlutterTts {
 
     if (modelType == TtsModelType.kokoro) {
       await _downloadFile(
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/config.json?download=true",
-        destPath: "$basePath/config.json",
-        onProgress: onProgress,
-      );
-      await _downloadFile(
         url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_q8f16.onnx?download=true",
         destPath: "$basePath/model_q8f16.onnx",
         onProgress: onProgress,
       );
-      await Directory('$basePath/voices').create(recursive: true);
     } else {
       await _downloadFile(
         url: "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/config.json?download=true",
@@ -143,33 +135,29 @@ class FlutterTts {
     await sink.close();
   }
 
-  /// Downloads a specific Kokoro voice file if it doesn't exist
-  Future<void> _ensureKokoroVoice(String voiceName, String voicesDir) async {
-    final voicePath = '$voicesDir/$voiceName.bin';
-    if (File(voicePath).existsSync()) return;
 
-    await _downloadFile(
-      url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/voices/$voiceName.bin?download=true",
-      destPath: voicePath,
-    );
-  }
 
   /// Initializes the TTS model. If paths are omitted, defaults from [downloadModels] are used.
   Future<void> init({
     String? configPath,
     String? modelPath,
-    String? voicesPath, // For Kokoro, this is the voices directory. For Kitten, the voices.npz file.
+    String? voicesPath, // For Kokoro, this is ignored since it's an asset. For Kitten, the voices.npz file.
   }) async {
     final dir = await getDefaultModelsDirectory();
     final modelFolder = modelType == TtsModelType.kokoro ? 'kokoro' : 'kitten';
     final basePath = '$dir/$modelFolder';
 
-    final actualConfigPath = configPath ?? '$basePath/config.json';
-    final configFile = File(actualConfigPath);
-    if (!configFile.existsSync()) {
-      throw Exception("config.json not found at $actualConfigPath");
+    if (modelType == TtsModelType.kokoro) {
+      final configString = await rootBundle.loadString('packages/flutter_tts_engine/assets/Kokoro/config.json');
+      _config = json.decode(configString);
+    } else {
+      final actualConfigPath = configPath ?? '$basePath/config.json';
+      final configFile = File(actualConfigPath);
+      if (!configFile.existsSync()) {
+        throw Exception("config.json not found at $actualConfigPath");
+      }
+      _config = json.decode(configFile.readAsStringSync());
     }
-    _config = json.decode(configFile.readAsStringSync());
 
     final actualModelPath = modelPath ?? 
         (modelType == TtsModelType.kokoro 
@@ -177,10 +165,9 @@ class FlutterTts {
             : '$basePath/kitten_tts_nano_v0_8.onnx');
     await _engine.init(actualModelPath);
 
-    _voicesDataPath = voicesPath ?? 
-        (modelType == TtsModelType.kokoro 
-            ? '$basePath/voices' 
-            : '$basePath/voices.npz');
+    if (modelType != TtsModelType.kokoro) {
+      _voicesDataPath = voicesPath ?? '$basePath/voices.npz';
+    }
             
     _loadedVoices = {};
     _initialized = true;
@@ -214,11 +201,8 @@ class FlutterTts {
     Float32List voiceStyle;
     
     if (modelType == TtsModelType.kokoro) {
-      await _ensureKokoroVoice(actualVoiceName, _voicesDataPath);
-      // For Kokoro, the style is sliced dynamically based on token length
-      // so we do not cache the specific slice here, we load it per inference 
-      // based on token length.
-      voiceStyle = BinParser.extractVoiceStyle('$_voicesDataPath/$actualVoiceName.bin', tokens.length);
+      // For Kokoro, voices are bundled in assets and sliced dynamically based on token length.
+      voiceStyle = await BinParser.extractVoiceStyle('packages/flutter_tts_engine/assets/Kokoro/voices/$actualVoiceName.bin', tokens.length);
     } else {
       if (!_loadedVoices.containsKey(actualVoiceName)) {
         _loadedVoices[actualVoiceName] = NpzParser.extractVoiceStyle(_voicesDataPath, actualVoiceName);
